@@ -127,8 +127,7 @@ def safe_get(endpoint: str) -> Optional[Any]:
         response = requests.get(f"{API_URL}/{endpoint}", timeout=2.0)
         if response.status_code == 200:
             return response.json()
-    except Exception as e:
-        # Silently log to Streamlit console, avoid crashing page
+    except Exception:
         pass
     return None
 
@@ -150,7 +149,6 @@ with status_col:
     health_text = "System Online" if is_ok else "Connecting to API..."
     st.markdown(f"**System Status:** {health_color} {health_text}")
     if is_ok and latest_stocks:
-        # Check source type (simulated or real)
         is_sim = latest_stocks[0].get("simulated", True) if len(latest_stocks) > 0 else True
         mode_text = "Simulation Mode (GBM)" if is_sim else "Live Market (yfinance)"
         st.caption(f"Engine Mode: **{mode_text}**")
@@ -174,237 +172,233 @@ selected_ticker = st.selectbox(
 )
 st.session_state.selected_ticker = selected_ticker
 
-# Main content placeholder that will refresh periodically
-placeholder = st.empty()
+# Fetch fresh API records
+summary = safe_get("stocks/summary")
+latest = safe_get("stocks/latest")
+history = safe_get(f"stocks/history/{selected_ticker}?limit=100")
 
-while True:
-    # Query latest API details
-    summary = safe_get("stocks/summary")
-    latest = safe_get("stocks/latest")
-    history = safe_get(f"stocks/history/{selected_ticker}?limit=100")
+if not latest or not summary:
+    st.warning("Awaiting connection/data from API service...")
+    time.sleep(2)
+    st.rerun()
 
-    if not latest or not summary:
-        time.sleep(2)
-        continue
+# Convert lists to Pandas DataFrames for formatting and Plotly visualizations
+df_latest = pd.DataFrame(latest)
+df_summary = summary
 
-    # Convert lists to Pandas DataFrames for formatting and Plotly visualizations
-    df_latest = pd.DataFrame(latest)
-    df_summary = summary
+# Process history
+if history:
+    df_history = pd.DataFrame(history)
+    df_history["timestamp"] = pd.to_datetime(df_history["timestamp"])
+else:
+    df_history = pd.DataFrame()
+
+# 1. TOP METRICS ROW
+m1, m2, m3, m4 = st.columns(4)
+
+# Top Gainer Card
+gainer = df_summary.get("top_gainer")
+with m1:
+    gainer_html = f"""
+    <div class="glass-card">
+        <div class="card-title">Top Gainer</div>
+        <div class="card-value">{gainer['ticker'] if gainer else 'N/A'}</div>
+        <div class="card-change-pos">{f"+{gainer['percent_change']:.2f}%" if gainer else "0.00%"}</div>
+    </div>
+    """
+    st.markdown(gainer_html, unsafe_allow_html=True)
     
-    # Process history
-    if history:
-        df_history = pd.DataFrame(history)
-        df_history["timestamp"] = pd.to_datetime(df_history["timestamp"])
+# Top Loser Card
+loser = df_summary.get("top_loser")
+with m2:
+    loser_html = f"""
+    <div class="glass-card">
+        <div class="card-title">Top Loser</div>
+        <div class="card-value">{loser['ticker'] if loser else 'N/A'}</div>
+        <div class="card-change-neg">{f"{loser['percent_change']:.2f}%" if loser else "0.00%"}</div>
+    </div>
+    """
+    st.markdown(loser_html, unsafe_allow_html=True)
+    
+# Average Volatility
+avg_vol = df_summary.get("avg_volatility", 0.0)
+with m3:
+    vol_html = f"""
+    <div class="glass-card">
+        <div class="card-title">Avg Volatility</div>
+        <div class="card-value">{avg_vol:.4f}</div>
+        <div style="color: #94A3B8; font-size: 0.95rem;">Rolling std of change</div>
+    </div>
+    """
+    st.markdown(vol_html, unsafe_allow_html=True)
+    
+# Active Alerts Card
+active_alerts_cnt = df_summary.get("total_active_alerts", 0)
+anomalies_cnt = df_summary.get("total_anomalies_detected", 0)
+with m4:
+    alerts_html = f"""
+    <div class="glass-card">
+        <div class="card-title">Alerts / Anomalies</div>
+        <div class="card-value">{active_alerts_cnt} / {anomalies_cnt}</div>
+        <div style="color: #F59E0B; font-size: 0.95rem; font-weight: 600;">Active Alerts & Flags</div>
+    </div>
+    """
+    st.markdown(alerts_html, unsafe_allow_html=True)
+
+# 2. CHARTS & GRIDS ROW
+col_left, col_right = st.columns([2, 1])
+
+# Left Side: Plotly Stock charts
+with col_left:
+    st.subheader(f"📈 {selected_ticker} Rolling Averages")
+    if not df_history.empty:
+        # Plot price with SMA overlays
+        fig = go.Figure()
+        
+        # Raw Stock price line
+        fig.add_trace(go.Scatter(
+            x=df_history["timestamp"],
+            y=df_history["price"],
+            mode="lines",
+            name="Live Ticks",
+            line=dict(color="#3B82F6", width=2.5)
+        ))
+        
+        # Fast SMA (5m)
+        fig.add_trace(go.Scatter(
+            x=df_history["timestamp"],
+            y=df_history["sma_5m"],
+            mode="lines",
+            name="SMA 5-Min",
+            line=dict(color="#10B981", width=1.5, dash="dash")
+        ))
+
+        # Slow SMA (15m)
+        fig.add_trace(go.Scatter(
+            x=df_history["timestamp"],
+            y=df_history["sma_15m"],
+            mode="lines",
+            name="SMA 15-Min",
+            line=dict(color="#8B5CF6", width=1.5, dash="dot")
+        ))
+
+        # Highlight Anomalies
+        anoms_history = df_history[df_history["anomaly_detected"] == True]
+        if not anoms_history.empty:
+            fig.add_trace(go.Scatter(
+                x=anoms_history["timestamp"],
+                y=anoms_history["price"],
+                mode="markers",
+                name="Anomalies",
+                marker=dict(color="#F59E0B", size=10, symbol="triangle-up")
+            ))
+        
+        # Highlight Price Drops
+        drops_history = df_history[df_history["price_drop_alert"] == True]
+        if not drops_history.empty:
+            fig.add_trace(go.Scatter(
+                x=drops_history["timestamp"],
+                y=drops_history["price"],
+                mode="markers",
+                name="Price Drop (>5%)",
+                marker=dict(color="#EF4444", size=10, symbol="triangle-down")
+            ))
+
+        # Chart styling for dark mode integration
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(30, 41, 59, 0.2)",
+            font=dict(color="#E2E8F0"),
+            legend=dict(font=dict(color="#E2E8F0")),
+            xaxis=dict(
+                showgrid=True,
+                gridcolor="rgba(255,255,255,0.05)",
+                title="Timestamp (UTC)"
+            ),
+            yaxis=dict(
+                showgrid=True,
+                gridcolor="rgba(255,255,255,0.05)",
+                title="Price (KES)"
+            ),
+            margin=dict(l=20, r=20, t=10, b=20),
+            height=400
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        df_history = pd.DataFrame()
+        st.info("Gathering initial historical samples... check back in a few seconds.")
 
-    with placeholder.container():
-        # 1. TOP METRICS ROW
-        m1, m2, m3, m4 = st.columns(4)
-        
-        # Top Gainer Card
-        gainer = df_summary.get("top_gainer")
-        with m1:
-            gainer_html = f"""
-            <div class="glass-card">
-                <div class="card-title">Top Gainer</div>
-                <div class="card-value">{gainer['ticker'] if gainer else 'N/A'}</div>
-                <div class="card-change-pos">{f"+{gainer['percent_change']:.2f}%" if gainer else "0.00%"}</div>
-            </div>
-            """
-            st.markdown(gainer_html, unsafe_allow_html=True)
-            
-        # Top Loser Card
-        loser = df_summary.get("top_loser")
-        with m2:
-            loser_html = f"""
-            <div class="glass-card">
-                <div class="card-title">Top Loser</div>
-                <div class="card-value">{loser['ticker'] if loser else 'N/A'}</div>
-                <div class="card-change-neg">{f"{loser['percent_change']:.2f}%" if loser else "0.00%"}</div>
-            </div>
-            """
-            st.markdown(loser_html, unsafe_allow_html=True)
-            
-        # Average Volatility
-        avg_vol = df_summary.get("avg_volatility", 0.0)
-        with m3:
-            vol_html = f"""
-            <div class="glass-card">
-                <div class="card-title">Avg Volatility</div>
-                <div class="card-value">{avg_vol:.4f}</div>
-                <div style="color: #94A3B8; font-size: 0.95rem;">Rolling std of change</div>
-            </div>
-            """
-            st.markdown(vol_html, unsafe_allow_html=True)
-            
-        # Active Alerts Card
-        active_alerts_cnt = df_summary.get("total_active_alerts", 0)
-        anomalies_cnt = df_summary.get("total_anomalies_detected", 0)
-        with m4:
-            alerts_html = f"""
-            <div class="glass-card">
-                <div class="card-title">Alerts / Anomalies</div>
-                <div class="card-value">{active_alerts_cnt} / {anomalies_cnt}</div>
-                <div style="color: #F59E0B; font-size: 0.95rem; font-weight: 600;">Active Alerts & Flags</div>
-            </div>
-            """
-            st.markdown(alerts_html, unsafe_allow_html=True)
+# Right Side: Latest ticker grid
+with col_right:
+    st.subheader("📁 Live Ticker Monitor")
+    monitor_df = df_latest[["ticker", "price", "percent_change", "anomaly_detected", "price_drop_alert"]].copy()
+    
+    # Format display styling columns
+    monitor_df["percent_change"] = monitor_df["percent_change"].apply(lambda x: f"{x:+.2f}%")
+    monitor_df["anomaly_detected"] = monitor_df["anomaly_detected"].apply(lambda x: "⚠️ Warning" if x else "✅ Normal")
+    monitor_df["price_drop_alert"] = monitor_df["price_drop_alert"].apply(lambda x: "🚨 ALERT" if x else "—")
+    
+    monitor_df.columns = ["Ticker", "Price (KES)", "Daily Change", "Status", "Drop Alert"]
+    
+    st.dataframe(
+        monitor_df.set_index("Ticker"),
+        height=350,
+        use_container_width=True
+    )
 
-        # 2. CHARTS & GRIDS ROW
-        col_left, col_right = st.columns([2, 1])
-        
-        # Left Side: Plotly Stock charts
-        with col_left:
-            st.subheader(f"📈 {selected_ticker} Rolling Averages")
-            if not df_history.empty:
-                # Plot price with SMA overlays
-                fig = go.Figure()
-                
-                # Raw Stock price line
-                fig.add_trace(go.Scatter(
-                    x=df_history["timestamp"],
-                    y=df_history["price"],
-                    mode="lines",
-                    name="Live Ticks",
-                    line=dict(color="#3B82F6", width=2.5)
-                ))
-                
-                # Fast SMA (5m)
-                fig.add_trace(go.Scatter(
-                    x=df_history["timestamp"],
-                    y=df_history["sma_5m"],
-                    mode="lines",
-                    name="SMA 5-Min",
-                    line=dict(color="#10B981", width=1.5, dash="dash")
-                ))
+# 3. ALERTS & ANOMALIES LOG ROW
+st.markdown("---")
+alerts_col, distribution_col = st.columns([1, 1])
 
-                # Slow SMA (15m)
-                fig.add_trace(go.Scatter(
-                    x=df_history["timestamp"],
-                    y=df_history["sma_15m"],
-                    mode="lines",
-                    name="SMA 15-Min",
-                    line=dict(color="#8B5CF6", width=1.5, dash="dot")
-                ))
-
-                # Highlight Anomalies
-                anoms_history = df_history[df_history["anomaly_detected"] == True]
-                if not anoms_history.empty:
-                    fig.add_trace(go.Scatter(
-                        x=anoms_history["timestamp"],
-                        y=anoms_history["price"],
-                        mode="markers",
-                        name="Anomalies",
-                        marker=dict(color="#F59E0B", size=10, symbol="triangle-up")
-                    ))
-                
-                # Highlight Price Drops
-                drops_history = df_history[df_history["price_drop_alert"] == True]
-                if not drops_history.empty:
-                    fig.add_trace(go.Scatter(
-                        x=drops_history["timestamp"],
-                        y=drops_history["price"],
-                        mode="markers",
-                        name="Price Drop (>5%)",
-                        marker=dict(color="#EF4444", size=10, symbol="triangle-down")
-                    ))
-
-                # Chart styling for dark mode integration
-                fig.update_layout(
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(30, 41, 59, 0.2)",
-                    font=dict(color="#E2E8F0"),
-                    legend=dict(font=dict(color="#E2E8F0")),
-                    xaxis=dict(
-                        showgrid=True,
-                        gridcolor="rgba(255,255,255,0.05)",
-                        title="Timestamp (UTC)"
-                    ),
-                    yaxis=dict(
-                        showgrid=True,
-                        gridcolor="rgba(255,255,255,0.05)",
-                        title="Price (KES)"
-                    ),
-                    margin=dict(l=20, r=20, t=10, b=20),
-                    height=400
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("Gathering initial historical samples... check back in a few seconds.")
-
-        # Right Side: Latest ticker grid
-        with col_right:
-            st.subheader("📁 Live Ticker Monitor")
-            # Create a polished, easily readable stock grid
-            monitor_df = df_latest[["ticker", "price", "percent_change", "anomaly_detected", "price_drop_alert"]].copy()
+with alerts_col:
+    st.subheader("🔔 Live Alert & Anomaly Engine Feed")
+    
+    # Display active price drop alerts
+    active_alerts = df_summary.get("active_alerts", [])
+    anoms_list = df_summary.get("anomalies", [])
+    
+    if not active_alerts and not anoms_list:
+        st.success("No active anomalies or price drops detected. Market is stable.")
+    else:
+        for ticker_alert in active_alerts:
+            st.markdown(
+                f'<div class="alert-ticker-box"><strong>🚨 CRITICAL PRICE DROP ALERT:</strong> '
+                f'Ticker <strong>{ticker_alert}</strong> has dropped more than {settings.ALERT_PRICE_DROP_PCT}% '
+                f'within its rolling window!</div>',
+                unsafe_allow_html=True
+            )
             
-            # Format display styling columns
-            monitor_df["percent_change"] = monitor_df["percent_change"].apply(lambda x: f"{x:+.2f}%")
-            monitor_df["anomaly_detected"] = monitor_df["anomaly_detected"].apply(lambda x: "⚠️ Warning" if x else "✅ Normal")
-            monitor_df["price_drop_alert"] = monitor_df["price_drop_alert"].apply(lambda x: "🚨 ALERT" if x else "—")
-            
-            monitor_df.columns = ["Ticker", "Price (KES)", "Daily Change", "Status", "Drop Alert"]
-            
-            st.dataframe(
-                monitor_df.set_index("Ticker"),
-                height=350,
-                use_container_width=True
+        for anom in anoms_list:
+            st.markdown(
+                f'<div class="anomaly-ticker-box"><strong>⚠️ ANOMALY TRIGGERED:</strong> '
+                f'Ticker <strong>{anom["ticker"]}</strong> is flagged due to: '
+                f'<em>{anom["reason"]}</em>.</div>',
+                unsafe_allow_html=True
             )
 
-        # 3. ALERTS & ANOMALIES LOG ROW
-        st.markdown("---")
-        alerts_col, distribution_col = st.columns([1, 1])
+with distribution_col:
+    st.subheader("📊 Stock Daily Return Distribution")
+    if not df_latest.empty:
+        # Color code returns
+        colors = ['#10B981' if x >= 0 else '#EF4444' for x in df_latest['percent_change']]
         
-        with alerts_col:
-            st.subheader("🔔 Live Alert & Anomaly Engine Feed")
-            
-            # Display active price drop alerts
-            active_alerts = df_summary.get("active_alerts", [])
-            anoms_list = df_summary.get("anomalies", [])
-            
-            if not active_alerts and not anoms_list:
-                st.success("No active anomalies or price drops detected. Market is stable.")
-            else:
-                for ticker_alert in active_alerts:
-                    st.markdown(
-                        f'<div class="alert-ticker-box"><strong>🚨 CRITICAL PRICE DROP ALERT:</strong> '
-                        f'Ticker <strong>{ticker_alert}</strong> has dropped more than {settings.ALERT_PRICE_DROP_PCT}% '
-                        f'within its rolling window!</div>',
-                        unsafe_allow_html=True
-                    )
-                    
-                for anom in anoms_list:
-                    st.markdown(
-                        f'<div class="anomaly-ticker-box"><strong>⚠️ ANOMALY TRIGGERED:</strong> '
-                        f'Ticker <strong>{anom["ticker"]}</strong> is flagged due to: '
-                        f'<em>{anom["reason"]}</em>.</div>',
-                        unsafe_allow_html=True
-                    )
+        fig_bar = go.Figure(data=[go.Bar(
+            x=df_latest['ticker'],
+            y=df_latest['percent_change'],
+            marker_color=colors
+        )])
+        
+        fig_bar.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(30, 41, 59, 0.2)",
+            font=dict(color="#E2E8F0"),
+            xaxis=dict(showgrid=False),
+            yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.05)", title="Change (%)"),
+            margin=dict(l=20, r=20, t=10, b=20),
+            height=250
+        )
+        st.plotly_chart(fig_bar, use_container_width=True)
 
-        with distribution_col:
-            st.subheader("📊 Stock Daily Return Distribution")
-            if not df_latest.empty:
-                # Color code returns
-                colors = ['#10B981' if x >= 0 else '#EF4444' for x in df_latest['percent_change']]
-                
-                fig_bar = go.Figure(data=[go.Bar(
-                    x=df_latest['ticker'],
-                    y=df_latest['percent_change'],
-                    marker_color=colors
-                )])
-                
-                fig_bar.update_layout(
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(30, 41, 59, 0.2)",
-                    font=dict(color="#E2E8F0"),
-                    xaxis=dict(showgrid=False),
-                    yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.05)", title="Change (%)"),
-                    margin=dict(l=20, r=20, t=10, b=20),
-                    height=250
-                )
-                st.plotly_chart(fig_bar, use_container_width=True)
-
-    # Poll frequency
-    time.sleep(2)
+# Sleep and rerun natively to refresh
+time.sleep(2)
+st.rerun()
