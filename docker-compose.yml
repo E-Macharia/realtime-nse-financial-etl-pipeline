@@ -47,7 +47,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - STREAM_INTERVAL_SECONDS=5
-      - SIMULATION_MODE=true
+      - SIMULATION_MODE=false
       - EXCHANGE=NSE
     depends_on:
       db:
