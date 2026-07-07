@@ -38,7 +38,7 @@ check_redis() {
 
 # Function to check WebSocket handshake connectivity via Python utility
 check_websocket() {
-  if docker exec nse_api_service python -c "import asyncio, websockets; async def main(): async with websockets.connect('ws://localhost:8000/stocks/ws'): pass; asyncio.run(main())" 2>/dev/null; then
+  if docker exec nse_api_service python -c "exec(\"import asyncio, websockets\nasync def main():\n    async with websockets.connect('ws://127.0.0.1:8000/stocks/ws'): pass\nasyncio.run(main())\")" 2>/dev/null; then
     echo "✅ [SUCCESS] WebSocket server handshake established successfully"
     return 0
   else
