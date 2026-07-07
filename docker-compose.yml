@@ -5,15 +5,15 @@ services:
     image: postgres:15-alpine
     container_name: nse_postgres
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT_HOST:-5432}:5432"
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: finance_db
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-finance_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -24,7 +24,7 @@ services:
     image: redis:7-alpine
     container_name: nse_redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT_HOST:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -36,19 +36,20 @@ services:
   etl:
     build:
       context: .
-      dockerfile: docker/etl.Dockerfile
+      dockerfile: Dockerfile
+      target: etl
     container_name: nse_etl_service
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=finance_db
-      - POSTGRES_HOST=db
-      - POSTGRES_PORT=5432
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - STREAM_INTERVAL_SECONDS=5
-      - SIMULATION_MODE=false
-      - EXCHANGE=NSE
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-finance_db}
+      - POSTGRES_HOST=${POSTGRES_HOST:-db}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - STREAM_INTERVAL_SECONDS=${STREAM_INTERVAL_SECONDS:-5}
+      - SIMULATION_MODE=${SIMULATION_MODE:-true}
+      - EXCHANGE=${EXCHANGE:-NSE}
     depends_on:
       db:
         condition: service_healthy
@@ -61,19 +62,19 @@ services:
   api:
     build:
       context: .
-      dockerfile: docker/api.Dockerfile
+      dockerfile: Dockerfile
+      target: api
     container_name: nse_api_service
-    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
     ports:
-      - "8000:8000"
+      - "${API_PORT_HOST:-8000}:8000"
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=finance_db
-      - POSTGRES_HOST=db
-      - POSTGRES_PORT=5432
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-finance_db}
+      - POSTGRES_HOST=${POSTGRES_HOST:-db}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
     depends_on:
       db:
         condition: service_healthy
@@ -86,13 +87,13 @@ services:
   dashboard:
     build:
       context: .
-      dockerfile: docker/api.Dockerfile
+      dockerfile: Dockerfile
+      target: dashboard
     container_name: nse_streamlit_dashboard
-    command: streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0
     ports:
-      - "8501:8501"
+      - "${DASHBOARD_PORT_HOST:-8501}:8501"
     environment:
-      - API_URL=http://api:8000
+      - API_URL=${API_URL:-http://api:8000}
     depends_on:
       - api
     restart: always
