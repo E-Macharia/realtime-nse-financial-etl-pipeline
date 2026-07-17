@@ -12,14 +12,14 @@ pipeline {
 
     stages {
 
-        // ==========================================================
+        // ============================================================
         // Stage 1: Checkout Source Code
-        // ==========================================================
+        // ============================================================
         stage('Checkout Source Code') {
 
             steps {
 
-                echo "DevOps Stage 1: Checking out repository from GitHub..."
+                echo "DevOps Stage 1: Checking out repository..."
 
                 checkout scm
 
@@ -30,63 +30,49 @@ pipeline {
                         returnStdout: true
                     ).trim()
 
-                    echo "Current Git Commit Hash: ${env.GIT_COMMIT_HASH}"
+                    echo "Git Commit: ${env.GIT_COMMIT_HASH}"
                 }
             }
         }
 
 
-        // ==========================================================
+        // ============================================================
         // Stage 2: Install Dependencies
-        // ==========================================================
+        // ============================================================
         stage('Install Dependencies') {
 
             steps {
 
-                echo "DevOps Stage 2: Preparing Python 3.12 environment..."
+                echo "DevOps Stage 2: Installing Python dependencies..."
 
                 sh '''
-                    echo "Checking Python installation..."
-
+                    echo "Python version:"
                     python3.12 --version
-
-                    which python3.12
-
 
                     echo "Creating virtual environment..."
 
                     python3.12 -m venv venv
 
-
-                    echo "Activating virtual environment..."
-
                     . venv/bin/activate
-
-
-                    python --version
-
-
-                    echo "Upgrading pip..."
 
                     pip install --upgrade pip
 
-
-                    echo "Installing dependencies..."
-
                     pip install -r requirements-backend.txt
+
+                    pip install pytest
                 '''
             }
         }
 
 
-        // ==========================================================
+        // ============================================================
         // Stage 3: Static Code Validation
-        // ==========================================================
+        // ============================================================
         stage('Static Code Validation') {
 
             steps {
 
-                echo "DevOps Stage 3: Running static syntax validation..."
+                echo "DevOps Stage 3: Running syntax validation..."
 
                 sh '''
                     . venv/bin/activate
@@ -99,9 +85,10 @@ pipeline {
         }
 
 
-        // ==========================================================
-        // Stage 4: Unit Tests
-        // ==========================================================
+
+        // ============================================================
+        // Stage 4: Run Unit Tests
+        // ============================================================
         stage('Run Unit Tests') {
 
             steps {
@@ -113,7 +100,8 @@ pipeline {
 
                     export PYTHONPATH=$WORKSPACE
 
-                    pytest --junitxml=test-results.xml
+                    pytest \
+                    --junitxml=test-results.xml
                 '''
             }
 
@@ -122,11 +110,13 @@ pipeline {
 
                 always {
 
-                    junit 'test-results.xml'
+                    junit allowEmptyResults: true,
+                          testResults: 'test-results.xml'
+
 
                     archiveArtifacts(
                         artifacts: 'test-results.xml',
-                        onlyIfSuccessful: false
+                        allowEmptyArchive: true
                     )
                 }
             }
@@ -134,9 +124,9 @@ pipeline {
 
 
 
-        // ==========================================================
+        // ============================================================
         // Stage 5: Build Docker Images
-        // ==========================================================
+        // ============================================================
         stage('Build Docker Image') {
 
             steps {
@@ -145,22 +135,25 @@ pipeline {
 
                 sh """
 
-                    docker build --target etl \
-                    -t nse-etl-pipeline-etl:latest \
-                    -t nse-etl-pipeline-etl:${BUILD_NUMBER} \
-                    -t nse-etl-pipeline-etl:${GIT_COMMIT_HASH} .
+                docker build \
+                --target etl \
+                -t nse-etl-pipeline-etl:latest \
+                -t nse-etl-pipeline-etl:${BUILD_NUMBER} \
+                -t nse-etl-pipeline-etl:${GIT_COMMIT_HASH} .
 
 
-                    docker build --target api \
-                    -t nse-etl-pipeline-api:latest \
-                    -t nse-etl-pipeline-api:${BUILD_NUMBER} \
-                    -t nse-etl-pipeline-api:${GIT_COMMIT_HASH} .
+                docker build \
+                --target api \
+                -t nse-etl-pipeline-api:latest \
+                -t nse-etl-pipeline-api:${BUILD_NUMBER} \
+                -t nse-etl-pipeline-api:${GIT_COMMIT_HASH} .
 
 
-                    docker build --target dashboard \
-                    -t nse-etl-pipeline-dashboard:latest \
-                    -t nse-etl-pipeline-dashboard:${BUILD_NUMBER} \
-                    -t nse-etl-pipeline-dashboard:${GIT_COMMIT_HASH} .
+                docker build \
+                --target dashboard \
+                -t nse-etl-pipeline-dashboard:latest \
+                -t nse-etl-pipeline-dashboard:${BUILD_NUMBER} \
+                -t nse-etl-pipeline-dashboard:${GIT_COMMIT_HASH} .
 
                 """
             }
@@ -168,18 +161,17 @@ pipeline {
 
 
 
-        // ==========================================================
-        // Stage 6: Verify Docker Images
-        // ==========================================================
+        // ============================================================
+        // Stage 6: Verify Images
+        // ============================================================
         stage('Docker Image Verification') {
 
             steps {
 
-                echo "DevOps Stage 6: Checking Docker images..."
-
                 sh '''
 
-                    docker images --filter "reference=nse-etl-pipeline-*"
+                docker images \
+                --filter "reference=nse-etl-pipeline-*"
 
                 '''
             }
@@ -187,57 +179,50 @@ pipeline {
 
 
 
-        // ==========================================================
+        // ============================================================
         // Stage 7: Deploy
-        // ==========================================================
+        // ============================================================
         stage('Deploy using Docker Compose') {
 
             steps {
 
-                echo "DevOps Stage 7: Deploying application..."
+                echo "Deploying application..."
 
                 sh '''
-
                     bash deployment/deploy.sh
-
                 '''
             }
         }
 
 
 
-        // ==========================================================
-        // Stage 8: Health Checks
-        // ==========================================================
+
+        // ============================================================
+        // Stage 8: Health Check
+        // ============================================================
         stage('Health Checks') {
 
             steps {
 
-                echo "DevOps Stage 8: Running service health checks..."
+                echo "Checking services..."
 
                 sh '''
-
                     bash scripts/healthcheck.sh
-
                 '''
             }
         }
 
 
 
-        // ==========================================================
+        // ============================================================
         // Stage 9: Cleanup
-        // ==========================================================
+        // ============================================================
         stage('Cleanup') {
 
             steps {
 
-                echo "DevOps Stage 9: Cleaning Docker resources..."
-
                 sh '''
-
                     docker image prune -f
-
                 '''
             }
         }
@@ -246,22 +231,17 @@ pipeline {
 
 
 
-    // ==========================================================
-    // Post Build Actions
-    // ==========================================================
     post {
-
 
         success {
 
-            echo "Jenkins Build #${BUILD_NUMBER} completed successfully!"
+            echo "SUCCESS: Jenkins Build #${BUILD_NUMBER}"
         }
 
 
         failure {
 
-            echo "Jenkins Build #${BUILD_NUMBER} failed. Check logs."
-
+            echo "FAILED: Jenkins Build #${BUILD_NUMBER}"
         }
 
     }
