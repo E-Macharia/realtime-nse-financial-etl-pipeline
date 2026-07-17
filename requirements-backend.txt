@@ -5,8 +5,8 @@ pandas>=2.2.2
 numpy>=1.26.4
 sqlalchemy==2.0.30
 psycopg2-binary>=2.9.9
-pydantic==2.7.4
-pydantic-settings==2.3.3
+pydantic>=2.7.4
+pydantic-settings>=2.3.3
 redis==5.0.5
 streamlit==1.35.0
 plotly==5.22.0
