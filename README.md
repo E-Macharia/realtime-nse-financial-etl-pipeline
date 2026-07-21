@@ -4,8 +4,6 @@ An end-to-end, containerized real-time financial data engineering pipeline desig
 
 This repository showcases both data engineering excellence (micro-batching, statistical anomaly detection, named volume caching) and **modern DevOps practices** (declarative CI/CD pipeline, multi-stage builds, container orchestration, and automated environment validations).
 
----
-
 ## 🏗️ System & CI/CD Architecture
 
 The system operates across two decoupled layers: the **Ingestion & Serving Layer** (the application) and the **Automation Layer** (Jenkins CI/CD).
@@ -35,8 +33,6 @@ The system operates across two decoupled layers: the **Ingestion & Serving Layer
       └── dashboard (Streamlit UI dashboard)
 ```
 
----
-
 ## 🛠️ DevOps CI/CD Pipeline Stages
 
 Our declarative `Jenkinsfile` automates the release cycle through **9 sequential stages**:
@@ -51,8 +47,6 @@ Our declarative `Jenkinsfile` automates the release cycle through **9 sequential
 8. **Health Checks**: Calls `scripts/healthcheck.sh` to ping and verify connectivity for FastAPI, Redis, WebSockets, and Streamlit.
 9. **Cleanup**: Runs `docker image prune` to delete untagged dangling build layers and reclaim disk space.
 
----
-
 ## 🐳 Docker Multi-Stage & Network Workflow
 
 * **Unified Multi-Stage Dockerfile**: We unified legacy separate configurations into a single `Dockerfile` at the root. The common dependencies (compiled libraries, package installations) are compiled once in the `base` stage, and inherited instantly by target stages (`etl`, `api`, `dashboard`), speeding up rebuilds.
@@ -66,6 +60,7 @@ Our declarative `Jenkinsfile` automates the release cycle through **9 sequential
 You can spin up a local Jenkins server that can interface with your host's Docker engine to run the pipeline:
 
 ### 1. Run Jenkins Container (Docker-out-of-Docker)
+
 Execute this command to launch Jenkins and mount the host's Docker socket and binary:
 
 ```bash
@@ -78,6 +73,7 @@ docker run -d -u root -p 8080:8080 -p 50000:50000 \
 * **Note on Docker access**: Mounting `/var/run/docker.sock` allows the Jenkins server inside the container to execute `docker` and `docker compose` commands directly on your host machine's Docker engine.
 
 ### 2. Configure the Jenkins Job
+
 1. Open **[http://localhost:8080](http://localhost:8080)** in your browser and complete the initial setup.
 2. Install recommended plugins (including **Git** and **Pipeline**).
 3. Create a new item -> **Pipeline** project named `realtime-nse-pipeline`.
@@ -94,11 +90,13 @@ docker run -d -u root -p 8080:8080 -p 50000:50000 \
 ## 🔄 Triggering and Managing Builds
 
 ### Trigger a Build
+
 * **Manual Trigger**: Click **Build Now** on the left-hand sidebar of your Jenkins project.
 * **Automated Webhooks**: In your GitHub repository Settings under Webhooks, add your Jenkins URL (e.g., `http://<your-ip>:8080/github-webhook/`) to automatically trigger a build every time a developer runs `git push`.
 * **SCM Polling**: In Jenkins under **Build Triggers**, check **Poll SCM** and enter `H/5 * * * *` to poll your GitHub repository for changes every 5 minutes.
 
 ### Rerun Failed Builds
+
 1. Open the failed build number in Jenkins.
 2. Click **Rebuild** on the left menu to run the entire pipeline again.
 3. For long-running builds, click **Restart from Stage** on the pipeline visualizer to skip already successful steps and resume compilation exactly where the error occurred (e.g., restarting directly from the *Deploy* stage after fixing a port collision).
