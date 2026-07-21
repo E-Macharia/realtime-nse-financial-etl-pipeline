@@ -130,6 +130,26 @@ nse-etl-pipeline/
 └── docs/                    # Educational manuals
     ├── CI_CD_PIPELINE.md    # Pipeline step details
     └── DOCKER_WORKFLOW.md   # Container networking & volumes
+
+
+
+
+
+
+
+    WEBHOOKS AND JENKINS SERVER
+
+    This is perfect! Your ngrok dashboard confirms that unrefinedly-periphrastic-leslee.ngrok-free.dev is indeed your permanent, registered dev domain.
+
+Since it has been active on your account for 7 months, it will never change or expire, meaning:
+
+You can start your background tunnel anytime using:
+bash
+
+
+nohup ngrok http 8080 --domain=unrefinedly-periphrastic-leslee.ngrok-free.dev > ngrok.log 2>&1 &
+Your GitHub webhooks for this project and any future projects will always point to: https://unrefinedly-periphrastic-leslee.ngrok-free.dev/github-webhook/
+Your automated Jenkins CI/CD environment is now fully complete, robust, and permanent!
 ```
 
 <!-- Automated webhook trigger validation -->
