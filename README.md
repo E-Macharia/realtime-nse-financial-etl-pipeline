@@ -133,3 +133,5 @@ nse-etl-pipeline/
     ├── CI_CD_PIPELINE.md    # Pipeline step details
     └── DOCKER_WORKFLOW.md   # Container networking & volumes
 ```
+
+<!-- Automated webhook trigger validation -->
